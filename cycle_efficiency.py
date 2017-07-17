@@ -1,7 +1,12 @@
 import pint
 from iapws import IAPWS97
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+fig = plt.figure()
+ax = fig.add_subplot(111,projection='3d')
 
+# TO-DO: get rid of this
 unit = pint.UnitRegistry()
 qty = 3 * unit.meter + 4 * unit.cm
 print(qty)
@@ -11,6 +16,7 @@ print(qty)
 # This uses the IAPWS and pint modules. Should be fun!
 
 # conversion factor for english units
+# TO-DO: do I need this?
 k = 144.0 / 778.0
 # initializing variables for mass flow error
 # TO-DO: do I need this?
@@ -34,11 +40,11 @@ class prop_type(object):
 
 state = []
 for i in range(11):
-  state.append(prop_type)
+  state.append(prop_type())
 
 # chosen values for turbine and pump efficiency
 # these values are chosen to make an interesting total efficiency distribution
-eta = eta_type
+eta = eta_type()
 eta.hpt = 0.9
 eta.lpt = 0.6
 eta.cp  = 0.8
@@ -48,7 +54,9 @@ eta.fwp = 0.8
 pressure_mesh_s0 = (np.arange(110.0,3200.0,500.0)) * unit.psi
 
 # preallocate eta_total array
-eta_total = np.zeros((len(pressure_mesh_s0),len(pressure_mesh_s0)),dtype=float)
+eta_total = np.zeros((len(pressure_mesh_s0),len(np.arange(2.0,pressure_mesh_s0[-1].to(unit.psi).magnitude,50.0))),dtype=float)
+xarr = np.zeros((len(pressure_mesh_s0),len(np.arange(2.0,pressure_mesh_s0[-1].to(unit.psi).magnitude,50.0))),dtype=float)
+yarr = np.zeros((len(pressure_mesh_s0),len(np.arange(2.0,pressure_mesh_s0[-1].to(unit.psi).magnitude,50.0))),dtype=float)
 
 for i in range(len(pressure_mesh_s0)):
 
@@ -82,7 +90,7 @@ for i in range(len(pressure_mesh_s0)):
     # STATE 3
     state[3].P = pressure_mesh_s3[j]
     state[3].prop = IAPWS97(P=state[3].P.to(unit.MPa).magnitude,
-      s=state[3].s.to(unit.kJ/(unit.kg*unit.degR)).magnitude)
+      s=state[0].s.to(unit.kJ/(unit.kg*unit.degR)).magnitude)
     state[3].hs = state[3].prop.h * (unit.kJ/unit.kg)
     state[3].h = state[0].h - eta.hpt * (state[0].h - state[3].hs)
 
@@ -100,9 +108,7 @@ for i in range(len(pressure_mesh_s0)):
     state[5].T = state[2].T - 5.0 * unit.degR
     state[5].prop = IAPWS97(P=state[5].P.to(unit.MPa).magnitude,
       T=state[5].T.to(unit.degK).magnitude)
-    print(state[3].h.magnitude)
     state[5].h = state[5].prop.h * (unit.kJ/unit.kg)
-    print(state[3].h.magnitude)
     state[5].s = state[5].prop.s * (unit.kJ/(unit.kg*unit.degK))
 
     # STATE 6
@@ -138,32 +144,36 @@ for i in range(len(pressure_mesh_s0)):
     state[10].h = state[9].h - w_fwp
 
     # build matrix to solve for relative mass flow rates
-    for a in range(11):
-      print(state[a].h)
-    print()
-    print(state[10].h.magnitude)
-    exit(0)
     A = np.array([[(state[5].h.magnitude - state[3].h.magnitude),
       (state[2].h.magnitude - state[3].h.magnitude - state[4].h.magnitude + state[5].h.magnitude)],
       [(state[1].h.magnitude - state[8].h.magnitude),
       (state[4].h.magnitude - state[8].h.magnitude)]])
     B = np.array([(state[5].h.magnitude - state[3].h.magnitude),
       (state[9].h.magnitude - state[8].h.magnitude)])
-    print(state[5].h.magnitude,state[3].h.magnitude)
-    print(state[5].h == state[3].h)
-    # catch singular matricies
-    if np.linalg.matrix_rank(A) == 0:
-      print(i,j)
-      continue
-    print('solve ',i,j)
     X = np.linalg.solve(A,B)
     m21 = X[0]
     m31 = X[1]
-    if not(m21 > 0) or (m31 > 0):
+    if not(m21 > 0) or not(m31 > 0):
       m_error += 1
+      print(m21,m31)
       print('m_error')
+    
+    # calculate works relative to mass flow rates
+    work_hpt = (state[0].h - state[1].h) + \
+      (1 - m21) * (state[1].h - state[2].h) + \
+      (1 - m21 - m31) * (state[2].h - state[3].h)
+    work_lpt = (1 - m21 - m31) * (state[5].h - state[6].h)
+    work_cp  = (1 - m21 - m31) * w_cps
+    work_fwp = w_fwp
+    Q = (state[0].h - state[10].h)
+    
+    # calculate total efficiency
+    eta_total[i,j] = (work_hpt + work_lpt + work_cp + work_fwp) / (Q)
+    xarr[i,j] = pressure_mesh_s0[i].to(unit.psi).magnitude
+    yarr[i,j] = pressure_mesh_s3[j].to(unit.psi).magnitude
+    if not(0.0 < eta_total[i,j] < 1.0):
+      print('eta error ',eta_total[i,j])
 
-
-
-    print('ok')
-    exit(0)
+# this plot could use a lot of help but it works
+surf = ax.plot_surface(xarr,yarr,eta_total)
+plt.show()
