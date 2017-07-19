@@ -13,7 +13,7 @@ gen_time = 0.0001 # * unit.s
 # step reactivity change (rho) (in k)
 rho = 200.0e-5
 # transient end-time (in seconds)
-end_time = 4.0
+end_time = 4.0 # * unit.s
 # number of timesteps
 nStep = 1000
 
